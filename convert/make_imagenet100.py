@@ -126,13 +126,9 @@ def place_file(src: Path, dst: Path, mode: str, dry_run: bool = False) -> None:
     if dst.exists():
         return
     if mode == 'symlink':
-        # Use relative symlink for portability
-        try:
-            rel = os.path.relpath(src, start=dst.parent)
-            os.symlink(rel, dst)
-        except OSError:
-            # Fallback to hardlink if symlink not permitted
-            os.link(src, dst)
+        # Use relative symlink for portability (no fallback)
+        rel = os.path.relpath(src, start=dst.parent)
+        os.symlink(rel, dst)
     elif mode == 'hardlink':
         os.link(src, dst)
     elif mode == 'copy':
@@ -228,4 +224,3 @@ def main() -> None:
 
 if __name__ == '__main__':
     main()
-

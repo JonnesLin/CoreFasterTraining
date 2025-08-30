@@ -27,6 +27,7 @@ MODE="symlink"       # symlink|hardlink|copy
 MAX_PER_CLASS=""     # optional
 SEED=""             # optional, used for deterministic sampling (requires python)
 DRY_RUN=0
+WORKERS=1            # parallel workers for file placement
 
 log()  { echo "[INFO]  $*"; }
 warn() { echo "[WARN]  $*" 1>&2; }
@@ -46,6 +47,7 @@ Optional:
   --mode MODE            symlink | hardlink | copy (default: symlink)
   --max-per-class INT    Limit images per class per split (default: all)
   --seed INT             Seed for deterministic random sampling (requires python)
+  --workers INT          Parallel workers for placing files (default: 1)
   --dry-run              Print actions without writing files
   -h, --help             Show this help
 EOF
@@ -60,6 +62,7 @@ while [[ $# -gt 0 ]]; do
     --mode) MODE="$2"; shift 2;;
     --max-per-class) MAX_PER_CLASS="$2"; shift 2;;
     --seed) SEED="$2"; shift 2;;
+    --workers) WORKERS="$2"; shift 2;;
     --dry-run) DRY_RUN=1; shift;;
     -h|--help) usage; exit 0;;
     *) warn "Unknown argument: $1"; usage; exit 1;;
@@ -163,7 +166,7 @@ place_file() {
   if [[ "$DRY_RUN" -eq 1 ]]; then return 0; fi
   case "$MODE" in
     symlink)
-      # Try creating a relative symlink (portable via python). Fallback to hardlink.
+      # Create a relative symlink (portable via python). No fallback.
       local parent
       parent=$(dirname "$dst")
       local rel
@@ -173,11 +176,7 @@ src, parent = sys.argv[1], sys.argv[2]
 print(os.path.relpath(src, start=parent))
 PY
 )
-      if ln -s "$rel" "$dst" 2>/dev/null; then
-        :
-      else
-        ln "$src" "$dst"
-      fi
+      ln -s "$rel" "$dst" 2>/dev/null || warn "symlink failed: $src -> $dst"
       ;;
     hardlink)
       ln "$src" "$dst" ;;
@@ -206,19 +205,61 @@ populate_split() {
     local dst_cls="$dst_split/$cls"
     ensure_dir "$dst_cls"
     local count=0
-    local f
-    for f in "$src_cls"/*; do
-      [[ -f "$f" ]] || continue
-      if ! is_image_file "$f"; then continue; fi
-      local base
-      base=$(basename "$f")
-      place_file "$f" "$dst_cls/$base"
-      files=$((files+1))
-      count=$((count+1))
-      if [[ -n "$MAX_PER_CLASS" && "$count" -ge "$MAX_PER_CLASS" ]]; then
-        break
-      fi
-    done
+    # Collect candidate files for this class (respecting image filter and max-per-class)
+    if [[ "$WORKERS" -gt 1 ]]; then
+      # Parallel branch: gather file pairs (src, dst) and dispatch via xargs -P
+      # Build a temporary buffer of src/dst pairs (two lines per file)
+      # Note: Assumes no spaces in filenames (true for standard ImageNet)
+      {
+        local f base
+        for f in "$src_cls"/*; do
+          [[ -f "$f" ]] || continue
+          if ! is_image_file "$f"; then continue; fi
+          base=$(basename "$f")
+          printf '%s\n%s\n' "$f" "$dst_cls/$base"
+          count=$((count+1))
+          if [[ -n "$MAX_PER_CLASS" && "$count" -ge "$MAX_PER_CLASS" ]]; then
+            break
+          fi
+        done
+      } | (
+        # Dispatch two arguments per invocation: $1=src, $2=dst
+        # shellcheck disable=SC2016
+        xargs -P "$WORKERS" -n 2 bash -c '
+          src="$1"; dst="$2"; mode="'$MODE'"; dry="'$DRY_RUN'";
+          # Skip if destination exists or dry-run enabled
+          if [[ "$dry" -eq 1 || -e "$dst" ]]; then exit 0; fi
+          case "$mode" in
+            symlink)
+              parent=$(dirname "$dst")
+              rel=$(python3 -c "import os,sys; print(os.path.relpath(sys.argv[1], sys.argv[2]))" "$src" "$parent")
+              if ! ln -s "$rel" "$dst" 2>/dev/null; then
+                echo "[WARN] symlink failed: $src -> $dst" 1>&2
+              fi
+              ;;
+            hardlink)
+              ln "$src" "$dst" ;;
+            copy)
+              cp -p "$src" "$dst" ;;
+          esac
+        ' _
+      )
+      files=$((files+count))
+    else
+      # Serial branch: re-use place_file directly
+      local f base
+      for f in "$src_cls"/*; do
+        [[ -f "$f" ]] || continue
+        if ! is_image_file "$f"; then continue; fi
+        base=$(basename "$f")
+        place_file "$f" "$dst_cls/$base"
+        files=$((files+1))
+        count=$((count+1))
+        if [[ -n "$MAX_PER_CLASS" && "$count" -ge "$MAX_PER_CLASS" ]]; then
+          break
+        fi
+      done
+    fi
   done < "$classes_file"
   echo "$present $files"
 }
