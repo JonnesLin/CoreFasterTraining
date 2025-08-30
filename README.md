@@ -679,6 +679,32 @@ The official documentation can be found at https://huggingface.co/docs/hub/timm.
 
 The root folder of the repository contains reference train, validation, and inference scripts that work with the included models and other features of this repository. They are adaptable for other datasets and use cases with a little hacking. See [documentation](https://huggingface.co/docs/timm/training_script).
 
+### Spectral Monitor (Cosine-Only) and EMA (Default)
+
+- Enable spectral monitoring with `--spec-monitor` to log top-k SVD of selected linear layers and subspace drift via principal cosines.
+- Metrics
+  - Values: `spec/<module>/sigma_max`, `spec/<module>/sv1..svK`, `spec/<module>/delta_sv_rel`.
+  - Subspace similarity: per-index principal cosines `spec/<module>/cos_u1..cos_uK`, `spec/<module>/cos_v1..cos_vK`, plus `cos_u_max/mean`, `cos_v_max/mean`.
+  - EMA: Exponential Moving Average is enabled by default (`--model-ema` default True). EMA metrics are logged under `spec_ema/...`.
+- Args
+  - `--spec-monitor` enable logging; `--spec-every` cadence; `--spec-topk` top-K; `--spec-targets` module name filters; `--spec-on-cpu` run SVD on CPU.
+- Example
+  ```bash
+  torchrun --nproc_per_node=1 train.py \
+    --dataset torch/cifar100 --dataset-download \
+    --model vit_small_patch16_224 \
+    --num-classes 100 --img-size 224 \
+    --batch-size 128 \
+    --opt adamw --lr 5e-4 --weight-decay 0.05 \
+    --sched cosine --epochs 300 --warmup-epochs 20 \
+    --aa rand-m9-mstd0.5-inc1 --mixup 0.8 --cutmix 1.0 --smoothing 0.1 \
+    --reprob 0.25 --remode pixel --drop-path 0.1 \
+    --min-lr 1e-5 --amp \
+    --log-wandb --wandb-project lowrank-vit \
+    --spec-monitor --spec-every 100 --spec-topk 8 \
+    --spec-targets "attn.qkv,attn.proj,mlp.fc1,mlp.fc2"
+  ```
+
 ## Awesome PyTorch Resources
 
 One of the greatest assets of PyTorch is the community and their contributions. A few of my favourite resources that pair well with the models and components here are listed below.

@@ -56,7 +56,7 @@
 
 - 每 N 次参数更新，针对指定“大矩阵层”（如 `attn.qkv`, `attn.proj`, `mlp.fc1`, `mlp.fc2`）执行 top-k SVD：
   - 记录最大奇异值与前 k 个奇异值；
-  - 记录与上一次监测的主子空间夹角（U/V 子空间的主角度，最大/均值）；
+  - 记录与上一次监测的主子空间主余弦（U/V 子空间，逐项与汇总 max/mean）；
   - 记录奇异值相对变化（如 ||s_t − s_{t−1}||/||s_{t−1}||）。
 - 所有指标将通过 W&B `wandb.log` 输出，便于绘制“最大奇异值轨迹/主角度随时间”等曲线；若未启用 W&B，则写入标准日志。
 
@@ -66,18 +66,19 @@ CLI（拟）：
 - `--spec-every 100`：每 100 次更新计算一次；
 - `--spec-topk 8`：取前 k 个奇异向量/值；
 - `--spec-targets attn.qkv,attn.proj,mlp.fc1,mlp.fc2`：监控的模块名匹配列表；
+- 默认记录主余弦（0–1），输出逐项 `cos_u1..cos_uk` 与 `cos_v1..cos_vk` 以及 `cos_u_max/mean`, `cos_v_max/mean`。
 - W&B：沿用 `--log-wandb`、`--wandb-project` 等既有参数，无需额外配置。
 
 日志字段（示例）：
 
 - `spec/<mod>/sigma_max`，`spec/<mod>/sv[1..k]`
 - `spec/<mod>/delta_sv_rel`
-- `spec/<mod>/angle_u_max_deg`，`spec/<mod>/angle_u_mean_deg`
-- `spec/<mod>/angle_v_max_deg`，`spec/<mod>/angle_v_mean_deg`
+- `spec/<mod>/cos_u1..k`，`spec/<mod>/cos_v1..k`
+- `spec/<mod>/cos_u_max`, `spec/<mod>/cos_u_mean`
+- `spec/<mod>/cos_v_max`, `spec/<mod>/cos_v_mean`
 
 这些度量用于：
 
 - Stability：`sigma_max` 是否受控；
 - Mechanism：主子空间是否稳定（主角度小），其能量与收敛速度是否相关；
 - 与 E4/定向放大实验联动的前后对比。
-

@@ -165,11 +165,12 @@
 - 本仓库提供“权重谱监控”并支持将指标写入 W&B。以下参数可叠加到任意训练命令：
   - `--log-wandb --wandb-project <项目名>`：开启 W&B 日志；
   - `--spec-monitor`：开启谱监控；
-  - `--spec-every 100`：每 100 次参数更新计算一次 SVD/子空间角度；
+  - `--spec-every 100`：每 100 次参数更新计算一次 SVD/子空间主余弦；
   - `--spec-topk 8`：记录前 k 个奇异值/向量；
   - `--spec-targets "attn.qkv,attn.proj,mlp.fc1,mlp.fc2"`：指定监控的线性层模块名匹配；
   - `--spec-on-cpu`：在 CPU 上做 SVD（减轻加速器负担）。
-  - EMA 监控：若启用 `--model-ema`，将同步对 EMA 模型记录同样的谱指标，指标使用 `spec_ema/` 前缀；可用 `--model-ema-decay`、`--model-ema-warmup` 做 EMA 超参调整。
+  - 子空间相似度：记录逐项主余弦（canonical correlations），键为 `cos_u1..cos_uk`、`cos_v1..cos_vk`（分别对应输入/输出子空间），另附 `cos_u_max/mean`、`cos_v_max/mean` 汇总；数值范围 0–1 越大越相似。
+  - EMA 监控（默认开启）：默认启用模型 EMA，并同步记录 EMA 的谱指标，使用 `spec_ema/` 前缀；可用 `--model-ema-decay`、`--model-ema-warmup` 做 EMA 超参调整。
 
 - 示例：CIFAR‑100（ViT‑Small）+ W&B + 谱监控
   ```bash
@@ -184,7 +185,6 @@
     --reprob 0.25 --remode pixel --drop-path 0.1 \
     --min-lr 1e-5 --amp \
     --log-wandb --wandb-project lowrank-vit \
-    --model-ema \
     --spec-monitor --spec-every 100 --spec-topk 8 \
     --spec-targets "attn.qkv,attn.proj,mlp.fc1,mlp.fc2"
   ```
@@ -202,14 +202,13 @@
     --reprob 0.25 --remode pixel --drop-path 0.1 \
     --min-lr 1e-5 --amp \
     --log-wandb --wandb-project lowrank-vit \
-    --model-ema \
     --spec-monitor --spec-every 100 --spec-topk 8 \
     --spec-targets "attn.qkv,attn.proj,mlp.fc1,mlp.fc2"
   ```
 
 提示：在 W&B 中可直接绘制以下曲线进行稳定性/机理分析（以模块名 m 为例）：
-- 基模型：`spec/m/sigma_max`、`spec/m/sv1..svK`、`spec/m/delta_sv_rel`、`spec/m/angle_u_max_deg`、`spec/m/angle_u_mean_deg`、`spec/m/angle_v_max_deg`、`spec/m/angle_v_mean_deg`；
-- EMA 模型：对应的 `spec_ema/m/...` 指标（如 `spec_ema/m/sigma_max`、`spec_ema/m/angle_u_mean_deg`）。
+- 基模型：`spec/m/sigma_max`、`spec/m/sv1..svK`、`spec/m/delta_sv_rel`、`spec/m/cos_u1..cos_uK`、`spec/m/cos_v1..cos_vK`、`spec/m/cos_u_max/mean`、`spec/m/cos_v_max/mean`；
+- EMA 模型：对应的 `spec_ema/m/...` 指标（如 `spec_ema/m/sigma_max`、`spec_ema/m/cos_u_mean`）。
 
 ## 训练小贴士
 - 显存不足：减小 `--batch-size` 或使用 `--grad-accum-steps`；开启 `--amp` 可显著节省显存。

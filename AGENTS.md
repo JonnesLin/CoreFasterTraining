@@ -1,43 +1,47 @@
-# Repository Guidelines
+# Agent Notes
 
-## Project Structure & Module Organization
-- `timm/`: core Python package (models, layers, data, optim, utils).
-- `tests/`: pytest suite (`test_*.py`) covering layers, models, optimizers, utils.
-- Top-level scripts: `train.py`, `validate.py`, `inference.py`, `benchmark.py`, `avg_checkpoints.py`.
-- Aux folders: `convert/` (model conversion), `hfdocs/` (docs), `results/` (checkpoints/logs, git-ignored).
+This document summarizes recent instrumentation changes relevant to training scripts and logging.
 
-## Build, Test, and Development Commands
-- Create env and install deps:
-  - `python -m pip install -r requirements.txt`
-  - `python -m pip install -r requirements-dev.txt`
-  - `python -m pip install -e .`  (editable install)
-- Run tests:
-  - `pytest tests/` (all)
-  - `pytest -k "substring" -n 4 tests/` (filter + parallel)
-- Common scripts:
-  - `python train.py --model resnet50 --data-dir /path --epochs 90`
-  - `python validate.py --model resnet50 --data-dir /path`
-  - `python inference.py --model resnet50 --input /path/to/img.jpg`
+## Spectral Monitor
 
-## Coding Style & Naming Conventions
-- Follow Google Python style with tweaks:
-  - 4-space indents; max line length 120.
-  - Prefer hanging indents; avoid aligning with closing brackets.
-- Names: `snake_case` for functions/vars/modules, `CamelCase` for classes, UPPER_SNAKE for constants.
-- Type hints encouraged for public APIs; docstrings follow Google style.
-- Formatting (suggested, not enforced):
-  - `black --skip-string-normalization --line-length 120 <paths>`
+- Cosine-only metrics: Spectral subspace drift is logged via principal cosines only. Angle metrics have been removed.
+  - Per-index cosines: `spec/<module>/cos_u1..cos_uK`, `spec/<module>/cos_v1..cos_vK` (U = input-side, V = output-side).
+  - Summaries: `spec/<module>/cos_u_max`, `spec/<module>/cos_u_mean`, `spec/<module>/cos_v_max`, `spec/<module>/cos_v_mean`.
+  - Also logged: `sigma_max`, `sv1..svK`, `delta_sv_rel`.
+- Targets and cadence:
+  - `--spec-monitor` enables logging; `--spec-every` controls update cadence; `--spec-topk` sets K; `--spec-targets` filters `nn.Linear` by name; `--spec-on-cpu` moves SVD to CPU.
+- W&B integration: With `--log-wandb`, metrics are logged under `spec/...`. EMA metrics use the `spec_ema/...` prefix.
 
-## Testing Guidelines
-- Framework: `pytest` with markers (`base`, `cfg`, `torchscript`, `features`, `fxforward`, `fxbackward`).
-- Naming: place tests in `tests/` as `test_*.py`; use descriptive test names.
-- Scope: add unit tests for new features/bug fixes; mark slow/integration sensibly and use `-k` to target.
+Implementation details:
 
-## Commit & Pull Request Guidelines
-- Commits: imperative mood and concise summary, e.g., `Add ConvNeXt-V2 factory`.
-- Reference issues in the body (`Fixes #123`). Group unrelated refactors separately from feature/bugfix.
-- PRs: include clear description, rationale, usage examples/CLI args, and test coverage. For training changes, share minimal logs or metrics.
-- Before opening: run `pytest`, ensure style/typing sanity, and avoid unrelated reformatting.
+- For each target linear weight `W`, compute `U,S,Vh = torch.linalg.svd(W, full_matrices=False)` and keep top-K bases.
+- Principal cosines are singular values of `U_prev.T @ U_cur` (and similarly for V); values in [0, 1].
 
-## Security & Configuration Tips
-- Do not commit large artifacts or secrets (tokens, datasets, checkpoints). Use `results/` for local outputs and Hugging Face Hub for sharing weights.
+## CLI & Defaults
+
+- Removed: `--spec-metric` (only cosine mode remains).
+- EMA default: `--model-ema` is enabled by default. EMA spectral metrics are logged automatically if spectral monitor is enabled.
+
+Migration notes:
+
+- Prior angle-based fields (`angle_u_*`, `angle_v_*`) are no longer emitted.
+- Existing dashboards should be updated to use `cos_*` fields.
+
+Example:
+
+```
+torchrun --nproc_per_node=1 train.py \
+  --dataset torch/cifar100 --dataset-download \
+  --model vit_small_patch16_224 \
+  --num-classes 100 --img-size 224 \
+  --batch-size 128 \
+  --opt adamw --lr 5e-4 --weight-decay 0.05 \
+  --sched cosine --epochs 300 --warmup-epochs 20 \
+  --aa rand-m9-mstd0.5-inc1 --mixup 0.8 --cutmix 1.0 --smoothing 0.1 \
+  --reprob 0.25 --remode pixel --drop-path 0.1 \
+  --min-lr 1e-5 --amp \
+  --log-wandb --wandb-project lowrank-vit \
+  --spec-monitor --spec-every 100 --spec-topk 8 \
+  --spec-targets "attn.qkv,attn.proj,mlp.fc1,mlp.fc2"
+```
+

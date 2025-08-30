@@ -367,8 +367,8 @@ group.add_argument('--split-bn', action='store_true',
 
 # Model Exponential Moving Average
 group = parser.add_argument_group('Model exponential moving average parameters')
-group.add_argument('--model-ema', action='store_true', default=False,
-                   help='Enable tracking moving average of model weights.')
+group.add_argument('--model-ema', action='store_true', default=True,
+                   help='Enable tracking moving average of model weights (default: enabled).')
 group.add_argument('--model-ema-force-cpu', action='store_true', default=False,
                    help='Force ema to be tracked on CPU, rank=0 node only. Disables EMA validation.')
 group.add_argument('--model-ema-decay', type=float, default=0.9998,
