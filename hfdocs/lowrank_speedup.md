@@ -64,16 +64,16 @@ CLI（拟）：
 
 - `--spec-monitor`：开启谱监控；
 - `--spec-every 100`：每 100 次更新计算一次；
-- `--spec-topk 8`：取前 k 个奇异向量/值；
+- `--spec-topk 8`：取前 k 与后 k 个奇异向量/值；
 - `--spec-targets attn.qkv,attn.proj,mlp.fc1,mlp.fc2`：监控的模块名匹配列表；
-- 默认记录主余弦（0–1），输出逐项 `cos_u1..cos_uk` 与 `cos_v1..cos_vk` 以及 `cos_u_max/mean`, `cos_v_max/mean`。
+- 默认记录主余弦（0–1），输出逐项 `cos_u1..cos_uk` 与 `cos_v1..cos_vk`（前 k），以及 `cos_u_last1..cos_u_lastk` 与 `cos_v_last1..cos_v_lastk`（后 k）；并提供 `cos_u_max/mean`, `cos_v_max/mean`（前 k）。
 - W&B：沿用 `--log-wandb`、`--wandb-project` 等既有参数，无需额外配置。
 
 日志字段（示例）：
 
-- `spec/<mod>/sigma_max`，`spec/<mod>/sv[1..k]`
+- `spec/<mod>/sigma_max`，`spec/<mod>/sv[1..k]`，`spec/<mod>/sv_last[1..k]`
 - `spec/<mod>/delta_sv_rel`
-- `spec/<mod>/cos_u1..k`，`spec/<mod>/cos_v1..k`
+- `spec/<mod>/cos_u1..k`，`spec/<mod>/cos_v1..k`，`spec/<mod>/cos_u_last1..k`，`spec/<mod>/cos_v_last1..k`
 - `spec/<mod>/cos_u_max`, `spec/<mod>/cos_u_mean`
 - `spec/<mod>/cos_v_max`, `spec/<mod>/cos_v_mean`
 

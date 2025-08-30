@@ -683,8 +683,8 @@ The root folder of the repository contains reference train, validation, and infe
 
 - Enable spectral monitoring with `--spec-monitor` to log top-k SVD of selected linear layers and subspace drift via principal cosines.
 - Metrics
-  - Values: `spec/<module>/sigma_max`, `spec/<module>/sv1..svK`, `spec/<module>/delta_sv_rel`.
-  - Subspace similarity: per-index principal cosines `spec/<module>/cos_u1..cos_uK`, `spec/<module>/cos_v1..cos_vK`, plus `cos_u_max/mean`, `cos_v_max/mean`.
+  - Values: `spec/<module>/sigma_max`, `spec/<module>/sv1..svK`, `spec/<module>/sv_last1..sv_lastK`, `spec/<module>/delta_sv_rel`.
+  - Subspace similarity: per-index principal cosines for top-k `spec/<module>/cos_u1..cos_uK`, `spec/<module>/cos_v1..cos_vK` (with summaries `cos_u_max/mean`, `cos_v_max/mean`), and for last-k `spec/<module>/cos_u_last1..cos_u_lastK`, `spec/<module>/cos_v_last1..cos_v_lastK`.
   - EMA: Exponential Moving Average is enabled by default (`--model-ema` default True). EMA metrics are logged under `spec_ema/...`.
 - Args
   - `--spec-monitor` enable logging; `--spec-every` cadence; `--spec-topk` top-K; `--spec-targets` module name filters; `--spec-on-cpu` run SVD on CPU.

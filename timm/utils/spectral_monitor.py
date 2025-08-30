@@ -54,9 +54,12 @@ class SpectralModuleState:
     name: str
     module: nn.Module
     k: int
-    prev_U: Optional[torch.Tensor] = None
-    prev_V: Optional[torch.Tensor] = None
-    prev_S: Optional[torch.Tensor] = None
+    # store previous top-k and last-k subspaces separately to limit memory
+    prev_U_top: Optional[torch.Tensor] = None
+    prev_V_top: Optional[torch.Tensor] = None
+    prev_U_last: Optional[torch.Tensor] = None
+    prev_V_last: Optional[torch.Tensor] = None
+    prev_S_top: Optional[torch.Tensor] = None
 
 
 class WeightSpectralMonitor:
@@ -109,29 +112,39 @@ class WeightSpectralMonitor:
             # full_matrices=False returns shapes: U (m, min(m,n)), S (min), Vh (min, n)
             U, S, Vh = torch.linalg.svd(W, full_matrices=False)
             k = min(t.k, S.shape[0])
-            Uk = U[:, :k]
-            Vk = Vh[:k, :].transpose(0, 1)
-            Sk = S[:k]
+            # top-k
+            Uk = U[:, :k] if k > 0 else U[:, :0]
+            Vk = Vh[:k, :].transpose(0, 1) if k > 0 else Vh[:0, :].transpose(0, 1)
+            Sk = S[:k] if k > 0 else S[:0]
+            # last-k (tail)
+            Ul = U[:, -k:] if k > 0 else U[:, :0]
+            Vl = Vh[-k:, :].transpose(0, 1) if k > 0 else Vh[:0, :].transpose(0, 1)
+            Sl = S[-k:] if k > 0 else S[:0]
 
             # values
             base = f"spec/{t.name}"
-            metrics[f"{base}/sigma_max"] = Sk[0].item()
+            if k > 0:
+                metrics[f"{base}/sigma_max"] = Sk[0].item()
+            else:
+                metrics[f"{base}/sigma_max"] = float("nan")
             for i in range(k):
                 metrics[f"{base}/sv{i+1}"] = Sk[i].item()
+                # last-k singular values: sv_last1 = smallest, increasing index = next smallest
+                metrics[f"{base}/sv_last{i+1}"] = S[-(i + 1)].item()
 
             # relative change of singular values if prev available
-            if t.prev_S is not None and len(t.prev_S) >= k:
-                prev = t.prev_S[:k]
+            if t.prev_S_top is not None and len(t.prev_S_top) >= k:
+                prev = t.prev_S_top[:k]
                 denom = torch.norm(prev) + 1e-12
                 delta = torch.norm(Sk - prev) / denom
                 metrics[f"{base}/delta_sv_rel"] = delta.item()
             else:
                 metrics[f"{base}/delta_sv_rel"] = float("nan")
 
-            # principal angles for U/V subspaces vs previous
-            if t.prev_U is not None and t.prev_U.shape[0] == Uk.shape[0]:
+            # principal angles for U/V subspaces vs previous (top-k)
+            if t.prev_U_top is not None and t.prev_U_top.shape[0] == Uk.shape[0]:
                 # per-index principal cosines (k values)
-                u_cos = _principal_cosines_all(t.prev_U[:, :k], Uk)
+                u_cos = _principal_cosines_all(t.prev_U_top[:, :k], Uk)
                 for i in range(min(k, u_cos.shape[0])):
                     metrics[f"{base}/cos_u{i+1}"] = float(u_cos[i].item())
                 # summary for convenience
@@ -143,8 +156,8 @@ class WeightSpectralMonitor:
                 metrics[f"{base}/cos_u_max"] = float("nan")
                 metrics[f"{base}/cos_u_mean"] = float("nan")
 
-            if t.prev_V is not None and t.prev_V.shape[0] == Vk.shape[0]:
-                v_cos = _principal_cosines_all(t.prev_V[:, :k], Vk)
+            if t.prev_V_top is not None and t.prev_V_top.shape[0] == Vk.shape[0]:
+                v_cos = _principal_cosines_all(t.prev_V_top[:, :k], Vk)
                 for i in range(min(k, v_cos.shape[0])):
                     metrics[f"{base}/cos_v{i+1}"] = float(v_cos[i].item())
                 metrics[f"{base}/cos_v_max"] = float(v_cos.max().item()) if v_cos.numel() else float('nan')
@@ -155,10 +168,29 @@ class WeightSpectralMonitor:
                 metrics[f"{base}/cos_v_max"] = float("nan")
                 metrics[f"{base}/cos_v_mean"] = float("nan")
 
+            # principal cosines for last-k subspaces
+            if t.prev_U_last is not None and t.prev_U_last.shape[0] == Ul.shape[0]:
+                u_cos_last = _principal_cosines_all(t.prev_U_last[:, :k], Ul)
+                for i in range(min(k, u_cos_last.shape[0])):
+                    metrics[f"{base}/cos_u_last{i+1}"] = float(u_cos_last[i].item())
+            else:
+                for i in range(k):
+                    metrics[f"{base}/cos_u_last{i+1}"] = float("nan")
+
+            if t.prev_V_last is not None and t.prev_V_last.shape[0] == Vl.shape[0]:
+                v_cos_last = _principal_cosines_all(t.prev_V_last[:, :k], Vl)
+                for i in range(min(k, v_cos_last.shape[0])):
+                    metrics[f"{base}/cos_v_last{i+1}"] = float(v_cos_last[i].item())
+            else:
+                for i in range(k):
+                    metrics[f"{base}/cos_v_last{i+1}"] = float("nan")
+
             # update state
-            t.prev_U = Uk
-            t.prev_V = Vk
-            t.prev_S = Sk
+            t.prev_U_top = Uk
+            t.prev_V_top = Vk
+            t.prev_U_last = Ul
+            t.prev_V_last = Vl
+            t.prev_S_top = Sk
 
         return metrics
 

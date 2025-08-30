@@ -5,16 +5,16 @@ This document summarizes recent instrumentation changes relevant to training scr
 ## Spectral Monitor
 
 - Cosine-only metrics: Spectral subspace drift is logged via principal cosines only. Angle metrics have been removed.
-  - Per-index cosines: `spec/<module>/cos_u1..cos_uK`, `spec/<module>/cos_v1..cos_vK` (U = input-side, V = output-side).
+  - Per-index cosines: `spec/<module>/cos_u1..cos_uK`, `spec/<module>/cos_v1..cos_vK` (top-k), and `spec/<module>/cos_u_last1..cos_u_lastK`, `spec/<module>/cos_v_last1..cos_v_lastK` (last-k). U = input-side, V = output-side.
   - Summaries: `spec/<module>/cos_u_max`, `spec/<module>/cos_u_mean`, `spec/<module>/cos_v_max`, `spec/<module>/cos_v_mean`.
-  - Also logged: `sigma_max`, `sv1..svK`, `delta_sv_rel`.
+  - Also logged: `sigma_max`, `sv1..svK`, `sv_last1..sv_lastK`, `delta_sv_rel`.
 - Targets and cadence:
   - `--spec-monitor` enables logging; `--spec-every` controls update cadence; `--spec-topk` sets K; `--spec-targets` filters `nn.Linear` by name; `--spec-on-cpu` moves SVD to CPU.
 - W&B integration: With `--log-wandb`, metrics are logged under `spec/...`. EMA metrics use the `spec_ema/...` prefix.
 
 Implementation details:
 
-- For each target linear weight `W`, compute `U,S,Vh = torch.linalg.svd(W, full_matrices=False)` and keep top-K bases.
+- For each target linear weight `W`, compute `U,S,Vh = torch.linalg.svd(W, full_matrices=False)` and keep top-K and last-K bases.
 - Principal cosines are singular values of `U_prev.T @ U_cur` (and similarly for V); values in [0, 1].
 
 ## CLI & Defaults
@@ -44,4 +44,3 @@ torchrun --nproc_per_node=1 train.py \
   --spec-monitor --spec-every 100 --spec-topk 8 \
   --spec-targets "attn.qkv,attn.proj,mlp.fc1,mlp.fc2"
 ```
-

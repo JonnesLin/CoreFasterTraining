@@ -166,10 +166,10 @@
   - `--log-wandb --wandb-project <项目名>`：开启 W&B 日志；
   - `--spec-monitor`：开启谱监控；
   - `--spec-every 100`：每 100 次参数更新计算一次 SVD/子空间主余弦；
-  - `--spec-topk 8`：记录前 k 个奇异值/向量；
+  - `--spec-topk 8`：记录前 k 个与后 k 个（last-k）奇异值/向量；
   - `--spec-targets "attn.qkv,attn.proj,mlp.fc1,mlp.fc2"`：指定监控的线性层模块名匹配；
   - `--spec-on-cpu`：在 CPU 上做 SVD（减轻加速器负担）。
-  - 子空间相似度：记录逐项主余弦（canonical correlations），键为 `cos_u1..cos_uk`、`cos_v1..cos_vk`（分别对应输入/输出子空间），另附 `cos_u_max/mean`、`cos_v_max/mean` 汇总；数值范围 0–1 越大越相似。
+  - 子空间相似度：记录逐项主余弦（canonical correlations），键为 `cos_u1..cos_uk`、`cos_v1..cos_vk`（前 k），以及 `cos_u_last1..cos_u_lastk`、`cos_v_last1..cos_v_lastk`（后 k）；另附 `cos_u_max/mean`、`cos_v_max/mean` 汇总（针对前 k）。数值范围 0–1 越大越相似。
   - EMA 监控（默认开启）：默认启用模型 EMA，并同步记录 EMA 的谱指标，使用 `spec_ema/` 前缀；可用 `--model-ema-decay`、`--model-ema-warmup` 做 EMA 超参调整。
 
 - 示例：CIFAR‑100（ViT‑Small）+ W&B + 谱监控
@@ -207,8 +207,36 @@
   ```
 
 提示：在 W&B 中可直接绘制以下曲线进行稳定性/机理分析（以模块名 m 为例）：
-- 基模型：`spec/m/sigma_max`、`spec/m/sv1..svK`、`spec/m/delta_sv_rel`、`spec/m/cos_u1..cos_uK`、`spec/m/cos_v1..cos_vK`、`spec/m/cos_u_max/mean`、`spec/m/cos_v_max/mean`；
+- 基模型：`spec/m/sigma_max`、`spec/m/sv1..svK`、`spec/m/sv_last1..sv_lastK`、`spec/m/delta_sv_rel`、`spec/m/cos_u1..cos_uK`、`spec/m/cos_v1..cos_vK`、`spec/m/cos_u_last1..cos_u_lastK`、`spec/m/cos_v_last1..cos_v_lastK`、`spec/m/cos_u_max/mean`、`spec/m/cos_v_max/mean`；
 - EMA 模型：对应的 `spec_ema/m/...` 指标（如 `spec_ema/m/sigma_max`、`spec_ema/m/cos_u_mean`）。
+
+## 离线谱分析（analyze_spectrum.py）
+- 预训练权重：
+  ```bash
+  python analyze_spectrum.py --model vit_base_patch16_224 --pretrained --topk 8
+  ```
+- 本地权重：
+  ```bash
+  python analyze_spectrum.py --model vit_base_patch16_224 --checkpoint your.ckpt.pth --svd-on-cpu --topk 8
+  ```
+- 切分 fused QKV 并保存向量：
+  ```bash
+  python analyze_spectrum.py --model vit_base_patch16_224 --pretrained --split-qkv --topk 8 --save-vectors --format npz --save-dir out
+  ```
+
+输出说明
+
+- 终端打印每层摘要与按类型聚合统计。
+- 若指定 `--save-dir out`：
+  - `out/<model>_spectral.json`：meta、sv_topk、sv_lastk、sigma_max/min 等。
+  - 选 `--save-vectors`：另存 U/V（npz 或 pt；JSON 不含大数组）。
+
+常用选项
+
+- `--targets "attn.qkv,attn.proj,mlp.fc1,mlp.fc2"`：筛选层。
+- `--svd-on-cpu`：在 CPU 上做 SVD，减轻显存。
+- `--dtype float64`：更高精度（更慢）。
+- `--full`：保存全谱及（可选）向量。
 
 ## 训练小贴士
 - 显存不足：减小 `--batch-size` 或使用 `--grad-accum-steps`；开启 `--amp` 可显著节省显存。
