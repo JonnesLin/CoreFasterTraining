@@ -169,6 +169,7 @@
   - `--spec-topk 8`：记录前 k 个奇异值/向量；
   - `--spec-targets "attn.qkv,attn.proj,mlp.fc1,mlp.fc2"`：指定监控的线性层模块名匹配；
   - `--spec-on-cpu`：在 CPU 上做 SVD（减轻加速器负担）。
+  - EMA 监控：若启用 `--model-ema`，将同步对 EMA 模型记录同样的谱指标，指标使用 `spec_ema/` 前缀；可用 `--model-ema-decay`、`--model-ema-warmup` 做 EMA 超参调整。
 
 - 示例：CIFAR‑100（ViT‑Small）+ W&B + 谱监控
   ```bash
@@ -183,6 +184,7 @@
     --reprob 0.25 --remode pixel --drop-path 0.1 \
     --min-lr 1e-5 --amp \
     --log-wandb --wandb-project lowrank-vit \
+    --model-ema \
     --spec-monitor --spec-every 100 --spec-topk 8 \
     --spec-targets "attn.qkv,attn.proj,mlp.fc1,mlp.fc2"
   ```
@@ -200,18 +202,20 @@
     --reprob 0.25 --remode pixel --drop-path 0.1 \
     --min-lr 1e-5 --amp \
     --log-wandb --wandb-project lowrank-vit \
+    --model-ema \
     --spec-monitor --spec-every 100 --spec-topk 8 \
     --spec-targets "attn.qkv,attn.proj,mlp.fc1,mlp.fc2"
   ```
 
 提示：在 W&B 中可直接绘制以下曲线进行稳定性/机理分析（以模块名 m 为例）：
-- `spec/m/sigma_max`、`spec/m/sv1..svK`；
-- `spec/m/delta_sv_rel`（奇异值相对变化）；
-- `spec/m/angle_u_max_deg`、`spec/m/angle_u_mean_deg`、`spec/m/angle_v_max_deg`、`spec/m/angle_v_mean_deg`（主子空间夹角）。
+- 基模型：`spec/m/sigma_max`、`spec/m/sv1..svK`、`spec/m/delta_sv_rel`、`spec/m/angle_u_max_deg`、`spec/m/angle_u_mean_deg`、`spec/m/angle_v_max_deg`、`spec/m/angle_v_mean_deg`；
+- EMA 模型：对应的 `spec_ema/m/...` 指标（如 `spec_ema/m/sigma_max`、`spec_ema/m/angle_u_mean_deg`）。
 
 ## 训练小贴士
 - 显存不足：减小 `--batch-size` 或使用 `--grad-accum-steps`；开启 `--amp` 可显著节省显存。
 - 学习率与 batch 大小：脚本默认会按全局 batch 大小缩放学习率；若显式设置 `--lr`，则以显式值为准。
-- 数据目录：ImageFolder 模式下默认 `train/` 与 `validation/`，脚本会自动匹配 `val/` `valid/` 等同义目录。
+- 数据目录：
+  - ImageFolder 模式下默认 `train/` 与 `validation/`，脚本会自动匹配 `val/` `valid/` 等同义目录。
+  - 使用 `torch/<name>`（torchvision）数据集且未显式传 `--data-dir` 时，脚本将自动使用 `~/.cache/torch/datasets`（若可写）或回退到 `./data` 作为根目录，并在日志中提示。建议手动指定 `--data-dir` 到你期望的位置以便管理数据。
 - 多卡训练：推荐 `torchrun --nproc_per_node=<gpus>` 启动，日志/保存路径请自行设置（如 `--output`、`--experiment`）。
 - 预训练权重：使用 `--pretrained` 微调可更快收敛，适当降低 `--lr` 与 `--epochs`。

@@ -689,6 +689,22 @@ def main():
     # create the train and eval datasets
     if args.data and not args.data_dir:
         args.data_dir = args.data
+    # If using torchvision datasets and no data-dir provided, pick a sensible default
+    if (not args.data_dir) and args.dataset and args.dataset.lower().startswith('torch/'):
+        default_candidates = [
+            os.path.expanduser('~/.cache/torch/datasets'),
+            os.path.join('.', 'data'),
+        ]
+        for cand in default_candidates:
+            try:
+                os.makedirs(cand, exist_ok=True)
+                args.data_dir = cand
+                if utils.is_primary(args):
+                    _logger.info(f"No --data-dir provided for torch/ dataset, defaulting to: {cand}")
+                break
+            except Exception:
+                continue
+        # If all candidates failed, leave args.data_dir as-is (None) and let downstream raise.
     if args.input_img_mode is None:
         input_img_mode = 'RGB' if data_config['input_size'][0] == 3 else 'L'
     else:
@@ -968,6 +984,7 @@ def main():
 
     # Initialize spectral monitor (optional)
     args._spec_monitor = None
+    args._spec_monitor_ema = None
     if args.spec_monitor:
         patterns = [s.strip() for s in args.spec_targets.split(',') if s.strip()]
         try:
@@ -980,6 +997,20 @@ def main():
             )
             if utils.is_primary(args):
                 _logger.info(f"Spectral monitor enabled: every={args.spec_every}, topk={args.spec_topk}, targets={patterns}")
+            # If EMA is enabled, initialize a separate spectral monitor for EMA model
+            if 'model_ema' in locals() and model_ema is not None:
+                try:
+                    args._spec_monitor_ema = WeightSpectralMonitor(
+                        model_ema,
+                        patterns=patterns,
+                        topk=args.spec_topk,
+                        every=args.spec_every,
+                        use_cpu=args.spec_on_cpu,
+                    )
+                    if utils.is_primary(args):
+                        _logger.info("Spectral monitor enabled for EMA model as well.")
+                except Exception as e:
+                    _logger.warning(f"Failed to initialize EMA spectral monitor: {e}")
         except Exception as e:
             _logger.warning(f"Failed to initialize spectral monitor: {e}")
 
@@ -1295,6 +1326,27 @@ def train_one_epoch(
                 args._spec_monitor.maybe_log(num_updates, _log_fn)
             except Exception as e:
                 _logger.debug(f"Spectral monitor failed on update {num_updates}: {e}")
+
+        # EMA spectral monitor logging (every N updates), with prefixed keys
+        if getattr(args, '_spec_monitor_ema', None) is not None:
+            def _log_fn_ema(metrics: dict):
+                # rename keys from 'spec/...' to 'spec_ema/...'
+                renamed = {}
+                for k, v in metrics.items():
+                    if k.startswith('spec/'):
+                        renamed_key = 'spec_ema/' + k[len('spec/'):]
+                    else:
+                        renamed_key = 'spec_ema/' + k
+                    renamed[renamed_key] = v
+                if args.log_wandb and has_wandb:
+                    try:
+                        wandb.log(renamed, step=num_updates)
+                    except Exception:
+                        pass
+            try:
+                args._spec_monitor_ema.maybe_log(num_updates, _log_fn_ema)
+            except Exception as e:
+                _logger.debug(f"EMA spectral monitor failed on update {num_updates}: {e}")
 
         if update_idx % args.log_interval == 0:
             lrl = [param_group['lr'] for param_group in optimizer.param_groups]
