@@ -17,7 +17,7 @@ torchrun --nproc_per_node=8 train.py \
     --data-dir /srv/home/jlin398/data/imagenet \
     --model vit_base_patch16_224 \
     --num-classes 1000 --img-size 224 \
-    --batch-size 64 --epochs 300 --warmup-epochs 40 \
+    --batch-size 64 --epochs 150 --warmup-epochs 40 \
     --aa rand-m9-mstd0.5-inc1 --reprob 0.25 --remode pixel --drop-path 0.1 \
     --min-lr 1e-5 --amp \
     --log-wandb --wandb-project lowrank-vit \
