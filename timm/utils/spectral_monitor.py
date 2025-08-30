@@ -79,6 +79,7 @@ class WeightSpectralMonitor:
         every: int = 100,
         device: Optional[torch.device] = None,
         use_cpu: bool = False,
+        interval: int = 1,
         # logging controls
         log_cos_per_index: bool = True,
         log_lastk: bool = True,
@@ -90,6 +91,7 @@ class WeightSpectralMonitor:
         self.every = every
         self.device = device
         self.use_cpu = use_cpu
+        self.interval = max(1, int(interval))
         self.log_cos_per_index = log_cos_per_index
         self.log_lastk = log_lastk
         self.log_sv_list = log_sv_list
@@ -122,15 +124,32 @@ class WeightSpectralMonitor:
             # SVD
             # full_matrices=False returns shapes: U (m, min(m,n)), S (min), Vh (min, n)
             U, S, Vh = torch.linalg.svd(W, full_matrices=False)
-            k = min(t.k, S.shape[0])
-            # top-k
-            Uk = U[:, :k] if k > 0 else U[:, :0]
-            Vk = Vh[:k, :].transpose(0, 1) if k > 0 else Vh[:0, :].transpose(0, 1)
-            Sk = S[:k] if k > 0 else S[:0]
-            # last-k (tail)
-            Ul = U[:, -k:] if k > 0 else U[:, :0]
-            Vl = Vh[-k:, :].transpose(0, 1) if k > 0 else Vh[:0, :].transpose(0, 1)
-            Sl = S[-k:] if k > 0 else S[:0]
+            r = S.shape[0]
+            # effective k considering interval and available rank
+            k = min(t.k, (r + self.interval - 1) // self.interval)
+            # indices for top-k with spacing (0-based indices)
+            if k > 0:
+                top_idx = torch.arange(0, k * self.interval, step=self.interval, device=U.device)
+                top_idx = top_idx[top_idx < r]
+            else:
+                top_idx = torch.tensor([], dtype=torch.long, device=U.device)
+            # indices for last-k with spacing (from end)
+            if k > 0:
+                last_start = r - 1
+                last_idx = torch.arange(last_start, last_start - k * self.interval - 1, step=-self.interval, device=U.device)
+                last_idx = last_idx[last_idx >= 0][:k]
+            else:
+                last_idx = torch.tensor([], dtype=torch.long, device=U.device)
+
+            # top-k (spaced)
+            Uk = U.index_select(1, top_idx) if top_idx.numel() else U[:, :0]
+            # Vh is (r, n), take rows by top_idx then transpose to (n, k)
+            Vk = Vh.index_select(0, top_idx).transpose(0, 1) if top_idx.numel() else Vh[:0, :].transpose(0, 1)
+            Sk = S.index_select(0, top_idx) if top_idx.numel() else S[:0]
+            # last-k (spaced from tail)
+            Ul = U.index_select(1, last_idx) if last_idx.numel() else U[:, :0]
+            Vl = Vh.index_select(0, last_idx).transpose(0, 1) if last_idx.numel() else Vh[:0, :].transpose(0, 1)
+            Sl = S.index_select(0, last_idx) if last_idx.numel() else S[:0]
 
             # values
             base = f"spec/{t.name}"
@@ -141,8 +160,9 @@ class WeightSpectralMonitor:
             if self.log_sv_list:
                 for i in range(k):
                     metrics[f"{base}/sv{i+1}"] = Sk[i].item()
-                    # last-k singular values: sv_last1 = smallest, increasing index = next smallest
-                    metrics[f"{base}/sv_last{i+1}"] = S[-(i + 1)].item()
+                for i in range(k):
+                    # last-k singular values with spacing
+                    metrics[f"{base}/sv_last{i+1}"] = Sl[i].item() if i < Sl.numel() else float('nan')
 
             # relative change of singular values if prev available
             if self.log_delta:

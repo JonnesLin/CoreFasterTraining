@@ -274,6 +274,8 @@ group.add_argument('--spec-every', type=int, default=100,
                    help='Compute and log spectral metrics every N optimizer updates (default: 100).')
 group.add_argument('--spec-topk', type=int, default=8,
                    help='Top-k singular values/vectors to track (default: 8).')
+group.add_argument('--spec-interval', '--spec-interval-value', dest='spec_interval', type=int, default=1,
+                   help='Spacing between selected singular indices for top-k and last-k (default: 1 = consecutive).')
 group.add_argument('--spec-targets', type=str, default='attn.qkv,attn.proj,mlp.fc1,mlp.fc2',
                    help='Comma-separated substrings to match target module names for monitoring.')
 group.add_argument('--spec-on-cpu', action='store_true', default=False,
@@ -1005,6 +1007,7 @@ def main():
                 patterns=patterns,
                 topk=args.spec_topk,
                 every=args.spec_every,
+                interval=args.spec_interval,
                 use_cpu=args.spec_on_cpu,
                 log_cos_per_index=not args.spec_summaries_only,
                 log_lastk=not args.spec_no_lastk,
@@ -1013,7 +1016,7 @@ def main():
                 log_delta=not args.spec_no_delta,
             )
             if utils.is_primary(args):
-                _logger.info(f"Spectral monitor enabled: every={args.spec_every}, topk={args.spec_topk}, targets={patterns}")
+                _logger.info(f"Spectral monitor enabled: every={args.spec_every}, topk={args.spec_topk}, interval={args.spec_interval}, targets={patterns}")
             # If EMA is enabled, initialize a separate spectral monitor for EMA model
             if 'model_ema' in locals() and model_ema is not None and not args.spec_no_ema_log:
                 try:
@@ -1022,6 +1025,7 @@ def main():
                         patterns=patterns,
                         topk=args.spec_topk,
                         every=args.spec_every,
+                        interval=args.spec_interval,
                         use_cpu=args.spec_on_cpu,
                         log_cos_per_index=not args.spec_summaries_only,
                         log_lastk=not args.spec_no_lastk,
@@ -1336,39 +1340,40 @@ def train_one_epoch(
         update_time_m.update(time.time() - update_start_time)
         update_start_time = time_now
 
-        # Spectral monitor logging (every N updates)
-        if args._spec_monitor is not None:
-            def _log_fn(metrics: dict):
-                if args.log_wandb and has_wandb:
-                    try:
-                        wandb.log(metrics, step=num_updates)
-                    except Exception:
-                        pass
-            try:
-                args._spec_monitor.maybe_log(num_updates, _log_fn)
-            except Exception as e:
-                _logger.debug(f"Spectral monitor failed on update {num_updates}: {e}")
+        # Spectral monitor logging (every N updates) - rank0 only
+        if utils.is_primary(args):
+            if args._spec_monitor is not None:
+                def _log_fn(metrics: dict):
+                    if args.log_wandb and has_wandb:
+                        try:
+                            wandb.log(metrics, step=num_updates)
+                        except Exception:
+                            pass
+                try:
+                    args._spec_monitor.maybe_log(num_updates, _log_fn)
+                except Exception as e:
+                    _logger.debug(f"Spectral monitor failed on update {num_updates}: {e}")
 
-        # EMA spectral monitor logging (every N updates), with prefixed keys
-        if getattr(args, '_spec_monitor_ema', None) is not None:
-            def _log_fn_ema(metrics: dict):
-                # rename keys from 'spec/...' to 'spec_ema/...'
-                renamed = {}
-                for k, v in metrics.items():
-                    if k.startswith('spec/'):
-                        renamed_key = 'spec_ema/' + k[len('spec/'):]
-                    else:
-                        renamed_key = 'spec_ema/' + k
-                    renamed[renamed_key] = v
-                if args.log_wandb and has_wandb:
-                    try:
-                        wandb.log(renamed, step=num_updates)
-                    except Exception:
-                        pass
-            try:
-                args._spec_monitor_ema.maybe_log(num_updates, _log_fn_ema)
-            except Exception as e:
-                _logger.debug(f"EMA spectral monitor failed on update {num_updates}: {e}")
+            # EMA spectral monitor logging (every N updates), with prefixed keys
+            if getattr(args, '_spec_monitor_ema', None) is not None:
+                def _log_fn_ema(metrics: dict):
+                    # rename keys from 'spec/...' to 'spec_ema/...'
+                    renamed = {}
+                    for k, v in metrics.items():
+                        if k.startswith('spec/'):
+                            renamed_key = 'spec_ema/' + k[len('spec/'):]
+                        else:
+                            renamed_key = 'spec_ema/' + k
+                        renamed[renamed_key] = v
+                    if args.log_wandb and has_wandb:
+                        try:
+                            wandb.log(renamed, step=num_updates)
+                        except Exception:
+                            pass
+                try:
+                    args._spec_monitor_ema.maybe_log(num_updates, _log_fn_ema)
+                except Exception as e:
+                    _logger.debug(f"EMA spectral monitor failed on update {num_updates}: {e}")
 
         if update_idx % args.log_interval == 0:
             lrl = [param_group['lr'] for param_group in optimizer.param_groups]

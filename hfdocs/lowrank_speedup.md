@@ -65,6 +65,7 @@ CLI（拟）：
 - `--spec-monitor`：开启谱监控；
 - `--spec-every 100`：每 100 次更新计算一次；
 - `--spec-topk 8`：取前 k 与后 k 个奇异向量/值；
+- `--spec-interval 2`：间隔采样奇异索引（例：2 → 第 1、3、5… 以及倒数第 1、3、5…）。
 - `--spec-targets attn.qkv,attn.proj,mlp.fc1,mlp.fc2`：监控的模块名匹配列表；
 - 默认记录主余弦（0–1），输出逐项 `cos_u1..cos_uk` 与 `cos_v1..cos_vk`（前 k），以及 `cos_u_last1..cos_u_lastk` 与 `cos_v_last1..cos_v_lastk`（后 k）；并提供 `cos_u_max/mean`, `cos_v_max/mean`（前 k）。
 - W&B：沿用 `--log-wandb`、`--wandb-project` 等既有参数，无需额外配置。

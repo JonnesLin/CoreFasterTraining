@@ -130,7 +130,7 @@
   --reprob 0.25 --remode pixel --drop-path 0.1 \
   --min-lr 1e-5 --amp \
   --log-wandb --wandb-project lowrank-vit \
-  --spec-monitor --spec-every 10 --spec-topk 8 \
+  --spec-monitor --spec-every 10 --spec-topk 8 --spec-interval 2 \
   --spec-targets "attn.qkv,attn.proj,mlp.fc1,mlp.fc2"
   ```
 - 微调已预训练权重（更快收敛）
@@ -160,7 +160,7 @@
     --layer-decay 0.65 \
     --min-lr 1e-5 --amp \
     --log-wandb --wandb-project lowrank-vit \
-    --spec-monitor --spec-every 10 --spec-topk 8 \
+    --spec-monitor --spec-every 10 --spec-topk 8 --spec-interval 2 \
     --spec-targets "attn.qkv,attn.proj,mlp.fc1,mlp.fc2"
   ```
 
@@ -187,6 +187,7 @@
   - `--spec-monitor`：开启谱监控；
   - `--spec-every 100`：每 100 次参数更新计算一次 SVD/子空间主余弦；
   - `--spec-topk 8`：记录前 k 个与后 k 个（last-k）奇异值/向量；
+  - `--spec-interval 2`：按间隔选取奇异索引（如取 2，则记录第 1、3、5... 以及倒数第 1、3、5...）。
   - `--spec-targets "attn.qkv,attn.proj,mlp.fc1,mlp.fc2"`：指定监控的线性层模块名匹配；
   - `--spec-on-cpu`：在 CPU 上做 SVD（减轻加速器负担）。
   - 子空间相似度：记录逐项主余弦（canonical correlations），键为 `cos_u1..cos_uk`、`cos_v1..cos_vk`（前 k），以及 `cos_u_last1..cos_u_lastk`、`cos_v_last1..cos_v_lastk`（后 k）；另附 `cos_u_max/mean`、`cos_v_max/mean` 汇总（针对前 k）。数值范围 0–1 越大越相似。
@@ -205,7 +206,7 @@
     --reprob 0.25 --remode pixel --drop-path 0.1 \
     --min-lr 1e-5 --amp \
     --log-wandb --wandb-project lowrank-vit \
-    --spec-monitor --spec-every 100 --spec-topk 8 \
+    --spec-monitor --spec-every 100 --spec-topk 8 --spec-interval 2 \
     --spec-targets "attn.qkv,attn.proj,mlp.fc1,mlp.fc2"
   ```
 
@@ -222,7 +223,7 @@
     --reprob 0.25 --remode pixel --drop-path 0.1 \
     --min-lr 1e-5 --amp \
     --log-wandb --wandb-project lowrank-vit \
-    --spec-monitor --spec-every 100 --spec-topk 8 \
+    --spec-monitor --spec-every 100 --spec-topk 8 --spec-interval 2 \
     --spec-targets "attn.qkv,attn.proj,mlp.fc1,mlp.fc2"
   ```
 

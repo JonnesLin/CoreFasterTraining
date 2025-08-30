@@ -687,7 +687,7 @@ The root folder of the repository contains reference train, validation, and infe
   - Subspace similarity: per-index principal cosines for top-k `spec/<module>/cos_u1..cos_uK`, `spec/<module>/cos_v1..cos_vK` (with summaries `cos_u_max/mean`, `cos_v_max/mean`), and for last-k `spec/<module>/cos_u_last1..cos_u_lastK`, `spec/<module>/cos_v_last1..cos_v_lastK`.
   - EMA: Exponential Moving Average is enabled by default (`--model-ema` default True). EMA metrics are logged under `spec_ema/...`.
 - Args
-  - `--spec-monitor` enable logging; `--spec-every` cadence; `--spec-topk` top-K; `--spec-targets` module name filters; `--spec-on-cpu` run SVD on CPU.
+  - `--spec-monitor` enable logging; `--spec-every` cadence; `--spec-topk` top-K; `--spec-interval` spacing between selected singular indices (e.g., 2 → 1,3,5.. and last 1,3,5..); `--spec-targets` module name filters; `--spec-on-cpu` run SVD on CPU.
 - Example
   ```bash
   torchrun --nproc_per_node=1 train.py \
@@ -701,7 +701,7 @@ The root folder of the repository contains reference train, validation, and infe
     --reprob 0.25 --remode pixel --drop-path 0.1 \
     --min-lr 1e-5 --amp \
     --log-wandb --wandb-project lowrank-vit \
-    --spec-monitor --spec-every 100 --spec-topk 8 \
+    --spec-monitor --spec-every 100 --spec-topk 8 --spec-interval 2 \
     --spec-targets "attn.qkv,attn.proj,mlp.fc1,mlp.fc2"
   ```
 
