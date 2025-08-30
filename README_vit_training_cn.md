@@ -119,16 +119,19 @@
   ```
 - ViT‑Base（可加层衰减）
   ```bash
-  python train.py \
-    --data-dir /path/imagenet \
-    --model vit_base_patch16_224 \
-    --batch-size 64 \
-    --opt adamw --lr 3e-4 --weight-decay 0.05 \
-    --sched cosine --epochs 300 --warmup-epochs 20 \
-    --aa rand-m9-mstd0.5-inc1 --mixup 0.8 --cutmix 1.0 --smoothing 0.1 \
-    --reprob 0.25 --remode pixel --drop-path 0.3 \
-    --layer-decay 0.65 \
-    --min-lr 1e-5 --amp
+  torchrun --nproc_per_node=8 train.py \
+  --data-dir /srv/home/jlin398/data/imagenet/imagenet-100 \
+  --model vit_base_patch16_224 \
+  --num-classes 100 --img-size 224 \
+  --batch-size 64 \
+  --opt adamw --lr 3e-4 --weight-decay 0.05 \
+  --sched cosine --epochs 120 --warmup-epochs 20 \
+  --aa rand-m9-mstd0.5-inc1 --mixup 0.8 --cutmix 1.0 --smoothing 0.1 \
+  --reprob 0.25 --remode pixel --drop-path 0.1 \
+  --min-lr 1e-5 --amp \
+  --log-wandb --wandb-project lowrank-vit \
+  --spec-monitor --spec-every 10 --spec-topk 8 \
+  --spec-targets "attn.qkv,attn.proj,mlp.fc1,mlp.fc2"
   ```
 - 微调已预训练权重（更快收敛）
   ```bash

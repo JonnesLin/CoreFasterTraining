@@ -278,6 +278,18 @@ group.add_argument('--spec-targets', type=str, default='attn.qkv,attn.proj,mlp.f
                    help='Comma-separated substrings to match target module names for monitoring.')
 group.add_argument('--spec-on-cpu', action='store_true', default=False,
                    help='Run SVD on CPU to reduce accelerator overhead.')
+group.add_argument('--spec-summaries-only', action='store_true', default=False,
+                   help='Log only summary spectral metrics (sigma_max, delta_sv_rel, cos_*_max/mean).')
+group.add_argument('--spec-no-lastk', action='store_true', default=False,
+                   help='Disable last-k subspace cosine logs (cos_*_last*).')
+group.add_argument('--spec-sv-max-only', action='store_true', default=False,
+                   help='Disable per-index singular value logs (sv*, sv_last*); keep only sigma_max.')
+group.add_argument('--spec-no-ema-log', action='store_true', default=False,
+                   help='Disable spectral logging for EMA model (EMA still trains if enabled).')
+group.add_argument('--spec-no-delta', action='store_true', default=False,
+                   help='Disable logging of delta_sv_rel (relative change of singular values).')
+group.add_argument('--spec-no-cos-summaries', action='store_true', default=False,
+                   help='Disable cos_u_max/mean and cos_v_max/mean summary logs.')
 
 # Augmentation & regularization parameters
 group = parser.add_argument_group('Augmentation and regularization parameters')
@@ -994,11 +1006,16 @@ def main():
                 topk=args.spec_topk,
                 every=args.spec_every,
                 use_cpu=args.spec_on_cpu,
+                log_cos_per_index=not args.spec_summaries_only,
+                log_lastk=not args.spec_no_lastk,
+                log_sv_list=not args.spec_sv_max_only,
+                log_cos_summaries=not args.spec_no_cos_summaries,
+                log_delta=not args.spec_no_delta,
             )
             if utils.is_primary(args):
                 _logger.info(f"Spectral monitor enabled: every={args.spec_every}, topk={args.spec_topk}, targets={patterns}")
             # If EMA is enabled, initialize a separate spectral monitor for EMA model
-            if 'model_ema' in locals() and model_ema is not None:
+            if 'model_ema' in locals() and model_ema is not None and not args.spec_no_ema_log:
                 try:
                     args._spec_monitor_ema = WeightSpectralMonitor(
                         model_ema,
@@ -1006,6 +1023,11 @@ def main():
                         topk=args.spec_topk,
                         every=args.spec_every,
                         use_cpu=args.spec_on_cpu,
+                        log_cos_per_index=not args.spec_summaries_only,
+                        log_lastk=not args.spec_no_lastk,
+                        log_sv_list=not args.spec_sv_max_only,
+                        log_cos_summaries=not args.spec_no_cos_summaries,
+                        log_delta=not args.spec_no_delta,
                     )
                     if utils.is_primary(args):
                         _logger.info("Spectral monitor enabled for EMA model as well.")

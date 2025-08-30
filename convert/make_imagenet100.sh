@@ -272,7 +272,7 @@ log "Selected classes file: $SELECTED_CLASSES_FILE"
 
 # Create destination split roots
 TRAIN_DST="$DST/train"; ensure_dir "$TRAIN_DST"
-if [[ -n "$VAL_SRC" && -d "$VAL_SRC" && is_split_structured "$VAL_SRC" ]]; then
+if [[ -n "$VAL_SRC" && -d "$VAL_SRC" ]] && is_split_structured "$VAL_SRC"; then
   VAL_DST="$DST/val"; ensure_dir "$VAL_DST"
 else
   VAL_DST=""; [[ -n "$VAL_SRC" ]] || warn "No validation split found. Only train/ will be created."
@@ -291,4 +291,3 @@ if [[ -n "$VAL_DST" ]]; then
   echo "  Val  : classes=${VAL_PRESENT}/$(wc -l < "$SELECTED_CLASSES_FILE") files=${VAL_FILES} src=${VAL_SRC}"
 fi
 echo "  Output: $DST (mode=$MODE, max_per_class=${MAX_PER_CLASS:-all})"
-
